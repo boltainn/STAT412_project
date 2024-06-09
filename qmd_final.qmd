@@ -1,8 +1,7 @@
 ---
-title: "2013 Grand Slams Tennis Data Interim Report"
-author: "Önder Türe"
-date: "2024-05-04"
-output: html_document
+title: "Untitled"
+format: html
+editor: visual
 cache: true
 ---
 
@@ -553,7 +552,7 @@ GrandSlam <- GrandSlam %>%
   filter(!is.na(FNL.1))
 ```
 
-There is `r dim(GrandSlam%>%select(ACE.1)%>%filter(is.na(GrandSlam$ACE.1)))[1]` NA in ACE.1 and ACE.2 columns at same observations, this is MCAR type missing observations, we can fill this values by median value of ACE. Median of ACE.1 and ACE.2 are `r median(na.omit(GrandSlam$ACE.1))` and `r median(na.omit(GrandSlam$ACE.2))`.
+There is  NA in ACE.1 and ACE.2 columns at same observations, this is MCAR type missing observations, we can fill this values by median value of ACE. Median of ACE.1 and ACE.2 are  and .
 
 ```{r NA_6, echo=FALSE, warning=FALSE}
 #Removing NA UFE values
@@ -673,9 +672,9 @@ GrandSlam_tst_std <- data.frame(test_numeric_standardized, test_other)
 
 Logistic regression is used to predict the RESULT of the tennis matches on this project. As a cross validation method, k-fold cv is used for k equals 10. This cv is made by using "caret" package in r. Our dependent variable should be binary. So, RESULT is binary with 1 or 2.
 
-Independence: predictors should be independent from eachother, We can check that by checking correlation between numeric predictors. As seen on the correlation plot. There are high correlation between NPW and NPA, BPC and BPW, FSP and SSP. So, NPW, BPW and SSP variables are removed from data set.
+Independence: predictors should be independent from each other, We can approve that by checking correlation between numeric predictors. As seen on the correlation plot. There are high correlation between NPW and NPA, BPC and BPW, FSP and SSP. So, NPW, BPW and SSP variables are removed from data set.
 
-```{r corr, echo=FALSE, warning=FALSE}
+```{r corr, warning=FALSE}
 # Compute Pearson correlation coefficients
 numeric_var <- GrandSlam_trn_std %>%
   select(c(NPW.1,NPA.1,NPW.2,NPA.2,BPC.1 ,BPW.1,BPC.2 ,BPW.2,FSP.1, SSP.1,FSP.2, SSP.2))
@@ -689,17 +688,17 @@ GrandSlam_tst_std <- GrandSlam_tst_std %>%
   select(-c(NPW.1,NPW.2,BPW.1,BPW.2, SSP.1, SSP.2))
 ```
 
-Now, logistic regression can be applied.
+Now, logistic regression can be applied. Logistic regression find that probability of result equal to 2.
 
 FSW, SSW and BPC statistics are more effective than other to predict winner. Also, p-values show that FSW, SSW and BPC are highly significant predictors. FSW and BPC influence can be seen in EDA part too. That shows that, player can practice more serve shoots to increase the win rate. Also, model indicate that breaking the opponent serve with fast shoots is really effective on win rate.
 
-On the other hand, ACE.1 and UFE.2 seems marginally significant and can be effective to predict result.
+On the other hand, WNR and UFE seems marginally significant and can be effective to predict result.
 
-```{r logistic, echo=FALSE, warning=FALSE}
-# 10 fold cross validation:
-train_control <- trainControl(method = "cv", number = 10, savePredictions = "final")
+```{r logistic, warning=FALSE}
+#10 k fold cv.
+set.seed(25)
+train_control <- trainControl(method = "cv", number = 10 ,savePredictions = "final")
 
-#Logistic regression
 log_model <- train(RESULT ~ ., data = GrandSlam_trn_std, method = "glm",family=binomial,
                       trControl = train_control)
 
@@ -707,16 +706,43 @@ log_model_1<-log_model$finalModel
 summary(log_model)
 ```
 
-You can find vif matrix of logistic regression at appendix b, There are no higher than 10 vif value. So, there is no highly correlated variables that lead multicollinearity. There is confusion matrix for test data and performance statistics for test and train data. Accuracy is 0.9 for test data which is acceptable and effective result. However, train data has 0.95 accuracy because logistic regression model made by train data. So, there are some overfitting. Other performance parameters are good as well. Other train data performance parameter are greater than test data too.
+Other predictors are not significant, so we can remake the logistic regression with significant predictors.
+
+Now all predictors are significant to predict RESULT. FSW is the most effective statistics to win the match. When FSW.1 change one unit, the log odds of the outcome decrease 3.11214 units. This means there is negative relationship between probability of result 2 and FSW.1. Similarly SSW.1, BPC.1, WNR.1 and UFE.2 has negative effect to result equal 2. As expected, FSW.2, SSW.2, BPC.2, WNR.2 and UFE.1 has positive relationship.
+
+```{r logistic2, warning=FALSE}
+log_model <- train(RESULT ~ FSW.1+SSW.1+BPC.1+WNR.1+UFE.1+FSW.2+SSW.2+BPC.2+WNR.2+UFE.2, data = GrandSlam_trn_std, method = "glm",family=binomial,
+                      trControl = train_control)
+log_model1<- log_model$finalModel
+summary(log_model)
+```
+
+You can find vif matrix of logistic regression below. There are no higher than 5 vif value. So, there is no highly correlated variables that lead multicollinearity.
+
+```{r vif}
+vif(log_model1)
+```
+
+There is confusion matrix for test data and performance statistics for test and train data.
 
 ```{r log_performance, echo=FALSE, warning=FALSE}
 # Extract the final predictions from the cross-validation
-train_pred<-predict(log_model, newdata = GrandSlam_trn_std)
 test_pred <- predict(log_model, newdata = GrandSlam_tst_std)
 
 # Create confusion matrix
 conf_matrix <- confusionMatrix(test_pred, GrandSlam_tst_std$RESULT)
-kable(conf_matrix$table,caption = "Confusion Table of Test Data")
+# Convert confusion matrix to data frame
+conf_matrix_df <- as.data.frame(conf_matrix$table)
+colnames(conf_matrix_df) <- c("Prediction", "Reference", "Frequency")
+
+# Plotting
+ggplot(conf_matrix_df, aes(Prediction,Reference, fill= Frequency)) +
+        geom_tile() + geom_text(aes(label=Frequency)) +
+        scale_fill_gradient(low="white", high="#009194") +
+        labs(x = "Reference",y = "Prediction") +
+        scale_x_discrete(labels=c("RESULT 1", "RESULT 2")) +
+        scale_y_discrete(labels=c("RESULT 1", "RESULT 2"))+
+        ggtitle("Test Data Confusion Matrix of Logistic Regression")
 
 # Extract performance metrics
 accuracy <- conf_matrix$overall['Accuracy']
@@ -725,27 +751,14 @@ recall <- conf_matrix$byClass['Sensitivity']
 f1_score <- 2 * (precision * recall) / (precision + recall)
 
 # Create a performance table
-performance_table <- data.frame(
+performance_table_log <- data.frame(
   Metric = c("Accuracy", "Precision", "Recall", "F1-Score"),
   Value = c(accuracy, precision, recall, f1_score))
 
-kable(performance_table,  caption = "Test data Performance of Logistic Regression")
-
-conf_matrix2 <- confusionMatrix(train_pred, GrandSlam_trn_std$RESULT)
-
-# Extract performance metrics
-accuracy2 <- conf_matrix2$overall['Accuracy']
-precision2 <- conf_matrix2$byClass['Pos Pred Value']
-recall2 <- conf_matrix2$byClass['Sensitivity']
-f1_score2 <- 2 * (precision2 * recall2) / (precision2 + recall2)
-
-# Create a performance table
-performance_table2 <- data.frame(
-  Metric = c("Accuracy", "Precision", "Recall", "F1-Score"),
-  Value = c(accuracy2, precision2, recall2, f1_score2))
-
-kable(performance_table2,  caption = "Train data Performance of Logistic Regression")
+kable(performance_table_log,  caption = "Test data Performance of Logistic Regression")
 ```
+
+Accuracy is `r conf_matrix$overall['Accuracy']` for test data which is acceptable and effective result. Other performance parameters show high performance as well.
 
 ## APPENDİCES
 
@@ -785,6 +798,6 @@ kable(performance_table2,  caption = "Train data Performance of Logistic Regress
 
 VIF matrix of logistic regression:
 
-```{r vif, echo=FALSE}
+```{r vif22, echo=FALSE}
 vif(log_model_1)
 ```
